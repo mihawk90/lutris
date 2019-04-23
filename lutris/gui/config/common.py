@@ -8,6 +8,7 @@ from lutris.util.log import logger
 from lutris import runners
 from lutris import settings
 from lutris.cache import get_cache_path, save_cache_path
+from lutris.gamesaves import get_gamesave_path, save_gamesave_path
 from lutris.gui.widgets.common import VBox, SlugEntry, NumberEntry, Label, FileChooserEntry
 from lutris.gui.config.boxes import GameBox, RunnerBox, SystemBox
 from lutris.gui.dialogs import ErrorDialog, QuestionDialog
@@ -104,6 +105,18 @@ class GameDialogCommon:
         )
         prefs_box.pack_start(cache_help_label, False, False, 6)
 
+        prefs_box.pack_start(self._get_gamesave_path_box(), False, False, 6)
+        gamesave_help_label = Gtk.Label(visible=True)
+        gamesave_help_label.set_size_request(400, -1)
+        gamesave_help_label.set_markup(
+            "If provided, this location will be used to consolidate "
+            "game saves and settings. This can be used to have\npersistent saves "
+            "and settings even when removing a game and its prefix contents.\nThis can "
+            "be used to set up your own cloud sync for your saves and settings.\n"
+            "If left empty, saves and settings will be saved at their default location inside the prefix"
+        )
+        prefs_box.pack_start(gamesave_help_label, False, False, 6)
+
         info_sw = self.build_scrolled_window(prefs_box)
         self._add_notebook_tab(info_sw, "Lutris preferences")
 
@@ -128,6 +141,31 @@ class GameDialogCommon:
 
     def save_cache_setting(self, value):
         save_cache_path(value)
+        GLib.source_remove(self.timer_id)
+        self.timer_id = None
+        return False
+
+    def _get_gamesave_path_box(self):
+        box = Gtk.Box(spacing=12, margin_right=12, margin_left=12)
+        label = Label("Save Location")
+        box.pack_start(label, False, False, 0)
+        gamesave_path = get_gamesave_path()
+        path_chooser = FileChooserEntry(
+            title="Set the folder for the gamesave path",
+            action=Gtk.FileChooserAction.SELECT_FOLDER,
+            path=gamesave_path
+        )
+        path_chooser.entry.connect("changed", self._on_gamesave_path_set)
+        box.pack_start(path_chooser, True, True, 0)
+        return box
+
+    def _on_gamesave_path_set(self, entry):
+        if self.timer_id:
+            GLib.source_remove(self.timer_id)
+        self.timer_id = GLib.timeout_add(1000, self.save_gamesave_setting, entry.get_text())
+
+    def save_gamesave_setting(self, value):
+        save_gamesave_path(value)
         GLib.source_remove(self.timer_id)
         self.timer_id = None
         return False

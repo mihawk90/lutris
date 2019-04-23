@@ -8,6 +8,7 @@ from lutris import api, pga, settings
 from lutris.installer import interpreter
 from lutris.installer.errors import ScriptingError, MissingGameDependency
 from lutris.game import Game
+from lutris.gamesaves import get_gamesave_path
 from lutris.gui.config.add_game import AddGameDialog
 from lutris.gui.dialogs import (
     NoInstallerDialog, DirectoryDialog, InstallerSourceDialog, QuestionDialog
@@ -241,6 +242,7 @@ class InstallerWindow(BaseApplicationWindow):
         button.hide()
         self.source_button.hide()
         self.interpreter.check_runner_install()
+        self.prepare_gamesave_path();
 
     def ask_user_for_file(self, message):
         self.clean_widgets()
@@ -427,6 +429,8 @@ class InstallerWindow(BaseApplicationWindow):
         self.close_button.grab_focus()
         self.close_button.show()
 
+        #self.prepare_gamesave_path();
+
         if not self.is_active():
             self.set_urgency_hint(True)  # Blink in taskbar
             self.connect("focus-in-event", self.on_window_focus)
@@ -531,3 +535,35 @@ class InstallerWindow(BaseApplicationWindow):
         self.widget_box.pack_end(scrolledwindow, True, True, 10)
         scrolledwindow.show()
         self.log_textview.show()
+
+    def prepare_gamesave_path(self):
+        """This checks which runner we are using, since this feature is only
+        useful for WINE, winesteam, steam, and native games.
+        If using any of these runners, set up the symlink for gamesaves"""
+        gamesave_path = get_gamesave_path()
+        gamesave_script_path = self.interpreter.script["game"]["gamesaves"]
+        if gamesave_path and gamesave_script_path and self.interpreter.runner in ("wine", "winesteam", "linux", "steam"):
+            logger.debug("[TARULIA] Using gamesave path %s", gamesave_path)
+            logger.debug("[TARULIA] runner: %s", self.interpreter.runner)
+            logger.debug("[TARULIA] script gamesave script path: %s", gamesave_script_path)
+
+            # access to private class, alternative?
+            gamesave_script_path = self.interpreter._substitute(gamesave_script_path)
+            logger.debug("[TARULIA] script gamesave script path substituted: %s", gamesave_script_path)
+
+            gamesave_path = os.path.join(gamesave_path, self.interpreter.game_slug)
+            logger.debug("[TARULIA] Source path: %s", gamesave_path)
+            # what mode to use? default 0777
+
+            # this fails when the directory already exists, which is the whole point
+            #os.renames(gamesave_script_path, gamesave_path) # this variant in on_install_finished()
+            os.makedirs(gamesave_script_path) # creates the directory structure
+            os.rmdir(gamesave_script_path) # removes the deepest directory so symlink won't error
+
+            # this works perfectly... until it doesn't :(
+            # WINE's prefix creation purges the directory structure and re-creates it, overwriting the symlink...
+            os.symlink(gamesave_path, gamesave_script_path)
+
+            # cleanup symlink on installer cancel? interpreter.py -> revert
+            # would need to check if target directory is empty
+            # could leave it there to not delete saves on accident
